@@ -6,6 +6,13 @@ The Idea is to abstract from the complex underlying Software, so that for the Ma
 which take care of everything hardware related.
 
 */
+
+//--------------------globale Variablen------------------------
+
+
+//--------------------Lexikon aller Variablen------------------
+
+
 void setup() {
   // Define Pin Modes
 
@@ -138,6 +145,7 @@ void setMotorSpeed(int value){
 }
 
 //Sets how steep the Robot takes a curve. A value below 0 means a left curve, A value above 0 means a right curve and a 0 means no curve
+//positive Richtung: mathematisch korrekt!!!!!!! gegen den Uhrzeigersinn
 void setAngle(int value){
 
 }
@@ -168,10 +176,12 @@ void calibrationState4(){
 
 }
 
+//
 void readyState(){
 
 }
 
+//Hauptmethode der Logik (Konvention: globale Variablen oben in Dokument)
 void raceState(){
 
 }
