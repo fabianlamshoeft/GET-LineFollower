@@ -7,27 +7,82 @@ which take care of everything hardware related.
 
 */
 
-/*-------------------globale Variablen------------------------
-float curSpeedR=aktuelle Geschwindigkeit des rechten Motors
-float curSpeedL=aktuelle Geschwindigkeit des linken Motors
-bool isFinished=gibt an, ob die Ziellinie erreicht wurde, sodass von race_state in ready_state übergegangen werden kann (ist zu Begin false)
-int brightLine=wird bei Kalibrierung einmal gesetzt und gibt den Wert an, der gemessen wird, wenn der ensor auf der Linie ist
-*/
+//-------------------globale Variablen------------------------
+float curSpeedR=0;
+//aktuelle Geschwindigkeit des rechten Motors
+float curSpeedL=0;
+//aktuelle Geschwindigkeit des linken Motors
+bool isFinished=false;
+//gibt an, ob die Ziellinie erreicht wurde, sodass von race_state in ready_state übergegangen werden kann (ist zu Begin false)
+int brightLine=0;
+//wird bei Kalibrierung einmal gesetzt und gibt den Wert an, der gemessen wird, wenn der ensor auf der Linie ist
+
 
 //--------------------Lexikon aller Variablen------------------
+
+//Pins for Motor R
+const int ENABLE_MOTOR_R =  6;
+const int A1_MOTOR_R = 8;
+const int A2_MOTOR_R = 7;
+
+//Pins for MotorL
+const int ENABLE_MOTOR_L =  5;
+const int A3_MOTOR_L = 3;
+const int A4_MOTOR_L = 4;
+
+//Pin for SensorL
+const int SENSOR_L = 15;
+const int SENSOR_R = 16;
+
+const int POTI_L = 17;
+const int POTI_R = 18;
+
+
+const int ledPin = 10;
+
+int pattern = 1;  // aktuelles Muster
+
+// Variablen zum Verfolgen des Blinkstatus
+unsigned long previousMillis = 0;
+int blinkCount = 0;
+bool ledState = LOW;
+int step = 0;
 
 
 void setup() {
   // Define Pin Modes
 
+  pinMode(ENABLE_MOTOR_R, OUTPUT);
+  pinMode(A1_MOTOR_R, OUTPUT);
+  pinMode(A2_MOTOR_R, OUTPUT);
+
+  pinMode(ENABLE_MOTOR_L, OUTPUT);
+  pinMode(A3_MOTOR_L, OUTPUT);
+  pinMode(A4_MOTOR_L, OUTPUT);
+
+  pinMode(SENSOR_L, INPUT);
+  pinMode(SENSOR_R, INPUT);
+
+  pinMode(POTI_L, INPUT);
+  pinMode(POTI_R, INPUT);
+
+
+  Serial.begin(9600);
+
+
 }
 
 void loop() {
   // Controlling the States of the Automat
-  //im loop muss überprüft werden, ob isFinished==true, dann ready_state, sonst wiederholt race_state
+  /*
+  int val = analogRead(POTI_L);
+  Serial.println(val);
+  delay(100);
+  */
+  blinkLed(6);
+
+  
 }
-
-
 
 
 // ------------------------------ Layer 0 LOW LEVEL CODE - Reading states, controlling Motors -----------------------------------------------
@@ -38,20 +93,53 @@ a value between -1023 and 1024, which corresponds to a forward Movement for posi
 */
 
 void setRawMotorL(int value){
+  if(value > 0){
+    digitalWrite(A3_MOTOR_L, HIGH);
+    digitalWrite(A4_MOTOR_L, LOW);
+    analogWrite(ENABLE_MOTOR_L, value);
+  }
 
+  if (value == 0){
+    digitalWrite(A3_MOTOR_L, HIGH);
+    digitalWrite(A4_MOTOR_L, HIGH);
+    analogWrite(ENABLE_MOTOR_L, 0);
+  }
+
+  if (value < 0){
+    digitalWrite(A3_MOTOR_L, LOW);
+    digitalWrite(A4_MOTOR_L, HIGH);
+    analogWrite(ENABLE_MOTOR_L, value * (-1));
+  }
 }
 
 void setRawMotorR(int value){
 
+  if(value > 0){
+    digitalWrite(A1_MOTOR_R, HIGH);
+    digitalWrite(A2_MOTOR_R, LOW);
+    analogWrite(ENABLE_MOTOR_R, value);
+  }
+
+  if (value == 0){
+    digitalWrite(A1_MOTOR_R, HIGH);
+    digitalWrite(A2_MOTOR_R, HIGH);
+    analogWrite(ENABLE_MOTOR_R, 0);
+  }
+
+  if (value < 0){
+    digitalWrite(A1_MOTOR_R, LOW);
+    digitalWrite(A2_MOTOR_R, HIGH);
+    analogWrite(ENABLE_MOTOR_R, value * (-1));
+  }
 }
 
 // Very simple (one line) getter Methods, which simply capsulate the Analog Read Method for the Sensors giving them a "speaking Name" in the code
 int getRawSensorL(){
-
+  return analogRead(SENSOR_L);
 }
 
 int getRawSensorR(){
-
+  return analogRead(SENSOR_R);
 }
 
 int getRawPotiL(){
@@ -150,7 +238,7 @@ void setMotorSpeed(int error){
   int absError=constrain(abs(error), 0, 600);
 
   //Bremsfaktor: je größer die Abweichung, desto stärker bremsen
-  int breakFactor = map(absError, 0, 600, 40, 100) / 100.0;
+  int brakeFactor = map(absError, 0, 600, 40, 100) / 100.0;
 
   //Geschwindigkeit anpassen
   int adjustedSpeedR= constrain(curSpeedR * brakeFactor, -255, 255);
@@ -173,8 +261,8 @@ void setAngle(int error){
   int turn = Kp * error; //nochmal mit Error multiplizieren, wenn error negativ, dann lenken nach ...-->größerer Error = mehr Drehung
 
   //asymmetrische Lenkung, u Kurve zu fahren, wenn keine Kurve nötig, dann ist turn=0
-  int speedL = curSpeed + turn;
-  int speedR = curSpeed - turn;
+  int speedL = curSpeedL + turn;
+  int speedR = curSpeedR - turn;
 
   // Clipping
   speedL = constrain(speedL, -255, 255); //Speed kann maximal zwischen -255(maxSpeed rückwärts) und 255(maxSpeed vorwärts) sein
@@ -185,8 +273,72 @@ void setAngle(int error){
 }
 
 //Method to set different LED Modes to indicate the differend Main Logic States
-void blinkLed(int speed, int pattern){
+void blinkLed(int pattern){
+    unsigned long now = millis();
 
+  // Parameter je Muster:
+  int blinks = 0;
+  unsigned long onTime = 500;
+  unsigned long offTime = 500;
+  unsigned long pauseTime = 0;
+  bool infiniteBlink = false;
+  bool alwaysOn = false;
+
+  switch (pattern) {
+    case 1: blinks = 1; pauseTime = 4500; break;
+    case 2: blinks = 2; pauseTime = 3500; break;
+    case 3: blinks = 3; pauseTime = 2500; break;
+    case 4: blinks = 4; pauseTime = 1500; break;
+    case 5: infiniteBlink = true; break;
+    case 6: alwaysOn = true; break;
+  }
+
+  if (alwaysOn) {
+    digitalWrite(ledPin, HIGH);
+    return;
+  }
+
+  if (infiniteBlink) {
+    if (ledState == LOW && (now - previousMillis >= offTime)) {
+      digitalWrite(ledPin, HIGH);
+      ledState = HIGH;
+      previousMillis = now;
+    }
+    else if (ledState == HIGH && (now - previousMillis >= onTime)) {
+      digitalWrite(ledPin, LOW);
+      ledState = LOW;
+      previousMillis = now;
+    }
+    return;
+  }
+
+  // Standard-Blinkmuster (case 1–4)
+  switch(step) {
+    case 0: // LED an/aus n-mal
+      if (ledState == LOW && (now - previousMillis >= offTime)) {
+        digitalWrite(ledPin, HIGH);
+        ledState = HIGH;
+        previousMillis = now;
+      }
+      else if (ledState == HIGH && (now - previousMillis >= onTime)) {
+        digitalWrite(ledPin, LOW);
+        ledState = LOW;
+        previousMillis = now;
+        blinkCount++;
+        if (blinkCount >= blinks) {
+          step = 1; // Pause starten
+          blinkCount = 0;
+        }
+      }
+      break;
+
+    case 1: // Pause nach n Blinkzyklen
+      if (now - previousMillis >= pauseTime) {
+        step = 0; // Neue Blinkserie starten
+        previousMillis = now;
+      }
+      break;
+  }
 }
 
 //Funktion, die einmalig bei Übergang in race_state() aufgerufen wird
@@ -239,7 +391,7 @@ void readyState(){
 //Hauptmethode der Logik (Konvention: globale Variablen oben in Dokument)
 void raceState(){
   //Check, ob der Wagen still steht, wenn ja dann slowStart()
-  if (curSpeedL=0 && curSpeedR=0){
+  if (curSpeedL==0 && curSpeedR==0){
     slowStart();
   }
 
